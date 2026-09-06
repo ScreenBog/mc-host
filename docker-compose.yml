@@ -1,0 +1,174 @@
+name: mc-hosting
+
+networks:
+  mc-router-net:
+    name: mc-router-net
+    driver: bridge
+  web-net:
+    name: web-net
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+
+services:
+  mc-router:
+    image: itzg/mc-router:latest
+    container_name: mc-router
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+    environment:
+      IN_DOCKER: "true"
+      AUTO_SCALE_UP: "true"
+      AUTO_SCALE_DOWN: "true"
+      AUTO_SCALE_DOWN_AFTER: "15m"
+      AUTO_SCALE_ASLEEP_MOTD: "${MC_ROUTER_ASLEEP_MOTD:-Server is asleep. Join again to wake it up.}"
+      CONNECTION_RATE_LIMIT: "5"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    group_add:
+      - "0"
+    networks:
+      - mc-router-net
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: mc-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mc_platform
+      POSTGRES_USER: orchestrator
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orchestrator -d mc_platform"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks:
+      - web-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: mc-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks:
+      - web-net
+
+  nginx:
+    image: nginx:alpine
+    container_name: mc-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
+      - ./downloads:/var/mc_hosting/downloads:ro
+    depends_on:
+      - api
+      - web
+    networks:
+      - web-net
+
+  api:
+    build:
+      context: ./backend
+    container_name: mc-api
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orchestrator:${DB_PASSWORD}@postgres:5432/mc_platform
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MC_SERVERS_ROOT:-/var/mc_hosting/servers}:${MC_SERVERS_ROOT:-/var/mc_hosting/servers}
+      - ./downloads:/var/mc_hosting/downloads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - web-net
+      - mc-router-net
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips="*"
+
+  worker:
+    build:
+      context: ./backend
+    container_name: mc-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orchestrator:${DB_PASSWORD}@postgres:5432/mc_platform
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${MC_SERVERS_ROOT:-/var/mc_hosting/servers}:${MC_SERVERS_ROOT:-/var/mc_hosting/servers}
+      - ./downloads:/var/mc_hosting/downloads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - web-net
+      - mc-router-net
+    command: taskiq worker app.workers.broker:broker app.workers.tasks
+
+  scheduler:
+    build:
+      context: ./backend
+    container_name: mc-scheduler
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orchestrator:${DB_PASSWORD}@postgres:5432/mc_platform
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - web-net
+    command: taskiq scheduler app.workers.broker:scheduler app.workers.tasks
+
+  bot:
+    build:
+      context: ./bot
+    container_name: mc-bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      API_BASE_URL: http://api:8000
+    depends_on:
+      - api
+    networks:
+      - web-net
+
+  web:
+    build:
+      context: ./web
+    container_name: mc-web
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NUXT_PUBLIC_API_BASE: https://api.shnenepepe.online
+      NUXT_PUBLIC_SITE_URL: https://shnenepepe.online
+    networks:
+      - web-net

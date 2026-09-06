@@ -1,0 +1,4 @@
+# Place Cloudflare Origin CA files here:
+#   origin.crt
+#   origin.key
+# Nginx Full (Strict) requires a valid Origin CA cert.

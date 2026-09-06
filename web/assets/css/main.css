@@ -1,0 +1,15 @@
+@import url("https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Serif:wght@600;700&display=swap");
+
+html,
+body,
+#__nuxt {
+  min-height: 100%;
+  background: #12140f;
+  color: #e7e1c9;
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse at top, rgba(91, 122, 58, 0.18), transparent 50%),
+    linear-gradient(#12140f, #0c0d0a);
+}

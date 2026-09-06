@@ -1,0 +1,76 @@
+openapi: 3.0.3
+info:
+  title: Minecraft Hosting Core API
+  version: 1.0.0
+paths:
+  /api/v1/servers:
+    post:
+      summary: Создание инстанса
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [user_id, plan_id, name, subdomain, server_type, game_version]
+              properties:
+                user_id: { type: integer }
+                plan_id: { type: string }
+                name: { type: string }
+                subdomain: { type: string }
+                server_type: { type: string, enum: [VANILLA, PAPER, PURPUR, FABRIC, FORGE, NEOFORGE] }
+                game_version: { type: string }
+      responses:
+        "201":
+          description: Сервер поставлен в очередь создания
+  /api/v1/servers/{server_id}/power:
+    post:
+      summary: Управление питанием контейнера
+      parameters:
+        - name: server_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action: { type: string, enum: [start, stop, restart] }
+      responses:
+        "200":
+          description: Команда передана
+  /api/v1/mods/search:
+    get:
+      summary: Поиск модификаций
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string }
+        - name: loader
+          in: query
+          required: true
+          schema: { type: string, enum: [fabric, forge, neoforge, paper] }
+        - name: game_version
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Результаты поиска
+  /api/v1/payments/webhook:
+    post:
+      summary: Обработка вебхука ЮKassa
+      responses:
+        "200":
+          description: Оплата подтверждена
+  /api/v1/auth/magic-link:
+    post:
+      summary: Выдача одноразовой ссылки в веб-панель
+  /api/v1/payments:
+    post:
+      summary: Создание платежа ЮKassa
