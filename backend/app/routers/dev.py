@@ -79,6 +79,39 @@ async def bootstrap(body: BootstrapIn, session: AsyncSession = Depends(get_sessi
         session.add(invoice)
         await session.flush()
         server = await provisioning.provision_paid_invoice(session, invoice)
+    elif server.container_id:
+        from app.services.java_orchestrator import ensure_running
+        from app.services.docker_orchestrator import power_async
+        import asyncio
+
+        await asyncio.to_thread(ensure_running, server.container_id, server.subdomain)
+        try:
+            await power_async(server.container_id, "start")
+        except Exception:
+            pass
+        server.status = ServerStatus.RUNNING
+        await session.commit()
+    else:
+        from app.models import Invoice, InvoiceStatus
+
+        invoice = Invoice(
+            user_id=user.id,
+            server_id=server.id,
+            amount=0,
+            status=InvoiceStatus.PENDING,
+            purpose="CREATE",
+            yookassa_payment_id=f"beta-retry-{server.id}",
+            metadata_={
+                "plan_id": plan.id,
+                "name": body.name,
+                "subdomain": body.subdomain,
+                "server_type": body.server_type.value,
+                "game_version": body.game_version,
+            },
+        )
+        session.add(invoice)
+        await session.flush()
+        server = await provisioning.provision_paid_invoice(session, invoice)
     settings = get_settings()
     token = create_token(
         subject=str(user.id),

@@ -101,6 +101,7 @@ def create_mc_server(
     proc = subprocess.Popen(
         cmd,
         cwd=str(srv),
+        stdin=subprocess.DEVNULL,
         stdout=open(srv / "process.log", "ab"),
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
@@ -118,6 +119,10 @@ def create_mc_server(
     except RuntimeError:
         mc_router.register(hostname, port)
     mc_router.register(hostname, port)
+    mc_router.register(subdomain, port)
+    mc_router.register(settings.public_ip, port)
+    mc_router.register("127.0.0.1", port)
+    mc_router.register("192.168.0.148", port)
     time.sleep(2)
     if proc.poll() is not None:
         raise RuntimeError(f"Java process exited with {proc.returncode}. See {srv / 'process.log'}")
@@ -134,6 +139,11 @@ def start_container(container_id: str) -> None:
     proc = _procs.get(server_id)
     if proc and proc.poll() is None:
         return
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.4)
+        if sock.connect_ex(("127.0.0.1", port)) == 0:
+            _ports[server_id] = port
+            return
     settings = get_settings()
     srv = server_dir(server_id)
     jar = _paper_jar()
@@ -187,3 +197,11 @@ def power(container_id: str, action: str) -> None:
             restart_container(container_id)
         case _:
             raise ValueError(action)
+
+
+def ensure_running(container_id: str, subdomain: str) -> None:
+    start_container(container_id)
+    port, _server_id = _parse(container_id)
+    settings = get_settings()
+    mc_router.register(f"{subdomain}.{settings.game_domain}", port)
+    mc_router.register(subdomain, port)

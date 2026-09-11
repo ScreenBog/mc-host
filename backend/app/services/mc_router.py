@@ -31,11 +31,12 @@ def lookup(hostname: str) -> Backend | None:
     key = hostname.lower().rstrip(".")
     if key in _backends:
         return _backends[key]
-    # accept "beta" as well as "beta.shnenepepe.ru"
     short = key.split(".")[0]
     for name, backend in _backends.items():
         if name.split(".")[0] == short:
             return backend
+    if _backends:
+        return next(iter(_backends.values()))
     return None
 
 
