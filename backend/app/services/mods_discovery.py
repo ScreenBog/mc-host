@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
@@ -27,15 +28,22 @@ async def search_mods(
     source: str = "both",
     project_type: str = "mod",
     index: str = "relevance",
+    offset: int = 0,
+    limit: int = 20,
 ) -> list[dict]:
     import time
 
-    cache_key = f"mods:search:{source}:{project_type}:{loader}:{game_version}:{index}:{query.lower()}"
+    cache_key = (
+        f"mods:search:{source}:{project_type}:{loader}:{game_version}:"
+        f"{index}:{offset}:{limit}:{query.lower()}"
+    )
     if get_settings().beta_mode:
         hit = _mem.get(cache_key)
         if hit and hit[0] > time.time():
             return hit[1]
-        merged = await _gather(query, loader, game_version, source, project_type, index)
+        merged = await _gather(
+            query, loader, game_version, source, project_type, index, offset, limit
+        )
         _mem[cache_key] = (time.time() + CACHE_TTL, merged)
         return merged
     client = _redis()
@@ -43,7 +51,9 @@ async def search_mods(
         cached = await client.get(cache_key)
         if cached:
             return json.loads(cached)
-        merged = await _gather(query, loader, game_version, source, project_type, index)
+        merged = await _gather(
+            query, loader, game_version, source, project_type, index, offset, limit
+        )
         await client.setex(cache_key, CACHE_TTL, json.dumps(merged))
         return merged
     finally:
@@ -57,20 +67,36 @@ async def _gather(
     source: str,
     project_type: str,
     index: str,
+    offset: int,
+    limit: int,
 ) -> list[dict]:
-    mr: list[dict] = []
-    cf: list[dict] = []
+    tasks = []
+    labels = []
     if source in {"both", "modrinth", "MODRINTH"}:
-        try:
-            mr = await modrinth.search(query, loader, game_version, project_type=project_type, index=index)
-        except httpx.HTTPError:
-            mr = []
+        tasks.append(
+            modrinth.search(
+                query,
+                loader,
+                game_version,
+                limit=limit,
+                project_type=project_type,
+                index=index,
+                offset=offset,
+            )
+        )
+        labels.append("mr")
     if source in {"both", "curseforge", "CURSEFORGE"} and project_type in {"mod", "modpack"}:
-        try:
-            cf = await curseforge.search(query, loader, game_version)
-        except httpx.HTTPError:
-            cf = []
-    return _dedupe(mr + cf)
+        tasks.append(curseforge.search(query, loader, game_version))
+        labels.append("cf")
+    if not tasks:
+        return []
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    merged: list[dict] = []
+    for item in results:
+        if isinstance(item, Exception):
+            continue
+        merged.extend(item)
+    return _dedupe(merged)[:limit]
 
 
 def _dedupe(hits: list[dict]) -> list[dict]:

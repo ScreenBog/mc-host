@@ -14,6 +14,8 @@ async def search(
     source: str = Query(default="both"),
     project_type: str = Query(default="mod"),
     index: str = Query(default="relevance"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=40),
 ) -> list[ModHit]:
     hits = await search_mods(
         query,
@@ -22,5 +24,7 @@ async def search(
         source=source,
         project_type=project_type,
         index=index,
+        offset=offset,
+        limit=limit,
     )
     return [ModHit.model_validate(h) for h in hits]

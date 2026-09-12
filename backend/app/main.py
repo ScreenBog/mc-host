@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import admin, auth, dev, mods, payments, servers, software, users
+from app.routers import admin, auth, dev, files, mods, payments, servers, software, users
 from app.services import mc_router
 
 settings = get_settings()
@@ -52,6 +52,7 @@ app.include_router(payments.router)
 app.include_router(dev.router)
 app.include_router(software.router)
 app.include_router(admin.router)
+app.include_router(files.router)
 
 
 @app.get("/healthz")
@@ -72,7 +73,10 @@ async def shutdown() -> None:
         await mc_router.stop()
 
 
-WEB_DIST = Path(__file__).resolve().parents[2] / "web" / ".output" / "public"
+_WEB_ROOT = Path(__file__).resolve().parents[2] / "web"
+WEB_DIST = _WEB_ROOT / "public"
+if not (WEB_DIST / "index.html").exists():
+    WEB_DIST = _WEB_ROOT / ".output" / "public"
 
 
 @app.get("/{full_path:path}")

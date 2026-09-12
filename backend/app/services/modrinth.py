@@ -20,13 +20,20 @@ async def search(
     limit: int = 20,
     project_type: str = "mod",
     index: str = "relevance",
+    offset: int = 0,
 ) -> list[dict]:
     facets = [["project_type:" + project_type]]
     if game_version:
         facets.append([f"versions:{game_version}"])
     if loader and loader not in {"vanilla", "all"}:
         facets.append([f"categories:{loader}"])
-    params = {"query": query, "facets": json.dumps(facets), "limit": limit, "index": index}
+    params = {
+        "query": query,
+        "facets": json.dumps(facets),
+        "limit": limit,
+        "offset": offset,
+        "index": index,
+    }
     async with httpx.AsyncClient(timeout=20, headers=_headers()) as client:
         response = await client.get(f"{BASE}/search", params=params)
         response.raise_for_status()

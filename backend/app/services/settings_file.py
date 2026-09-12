@@ -20,6 +20,8 @@ EDITABLE = {
     "simulation-distance": "simulation_distance",
     "motd": "motd",
     "resource-pack": "resource_pack",
+    "spawn-protection": "spawn_protection",
+    "max-tick-time": "max_tick_time",
 }
 
 DEFAULTS = {
@@ -33,6 +35,8 @@ DEFAULTS = {
     "simulation_distance": 8,
     "motd": "",
     "resource_pack": "",
+    "spawn_protection": 0,
+    "max_tick_time": 60000,
 }
 
 

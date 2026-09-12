@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -43,6 +44,7 @@ from app.schemas import (
     ServerOut,
     ServerSettingsIn,
 )
+from pydantic import BaseModel
 from app.security import is_platform_admin, require_bot_token, require_user
 from app.services import audit, backups, docker_orchestrator, settings_file
 from app.services.mods_discovery import download_and_install
@@ -249,6 +251,124 @@ async def list_mods(
         await session.execute(select(InstalledMod).where(InstalledMod.server_id == server.id))
     ).scalars().all()
     return [InstalledModOut.model_validate(r) for r in rows]
+
+
+class AddonInstallIn(BaseModel):
+    source: ModSource
+    external_id: str
+    version_id: str | None = None
+    name: str = ""
+    with_deps: bool = True
+
+
+@router.post("/servers/{server_id}/addons/install", status_code=202)
+async def queue_addon_install(
+    server_id: uuid.UUID,
+    body: AddonInstallIn,
+    session: AsyncSession = Depends(get_session),
+    claims: dict = Depends(require_user),
+) -> dict:
+    from app.db import SessionLocal
+    from app.services.addon_jobs import create_job, run_install
+
+    server, user, _ = await require_role(session, server_id, claims, can_manage)
+    loader = server.server_type.value.lower()
+    if loader in {"purpur", "spigot"}:
+        loader = "paper"
+    job_id = create_job(str(server.id), body.source.value, body.external_id, body.name)
+
+    async def _bg() -> None:
+        async with SessionLocal() as db:
+            srv = await db.get(Server, server_id)
+            if srv is None:
+                return
+            try:
+                installed = await run_install(
+                    job_id,
+                    srv,
+                    body.source,
+                    body.external_id,
+                    body.version_id,
+                    loader,
+                    body.with_deps,
+                )
+                allowed = {
+                    "source",
+                    "external_id",
+                    "file_id",
+                    "name",
+                    "file_name",
+                    "enabled",
+                    "addon_type",
+                    "install_error",
+                }
+                for item in installed:
+                    existing = (
+                        await db.execute(
+                            select(InstalledMod).where(
+                                InstalledMod.server_id == srv.id,
+                                InstalledMod.source == item["source"],
+                                InstalledMod.external_id == item["external_id"],
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    payload = {k: v for k, v in item.items() if k in allowed}
+                    if existing:
+                        for k, v in payload.items():
+                            setattr(existing, k, v)
+                    else:
+                        db.add(InstalledMod(server_id=srv.id, **payload))
+                srv.restart_required = True
+                await audit.log(db, "mod.install", user.telegram_id, str(srv.id), body.external_id)
+                await db.commit()
+            except Exception:
+                await db.rollback()
+
+    asyncio.create_task(_bg())
+    return {"job_id": job_id, "state": "queued"}
+
+
+@router.get("/servers/{server_id}/addons/jobs/{job_id}")
+async def addon_job(
+    server_id: uuid.UUID,
+    job_id: str,
+    session: AsyncSession = Depends(get_session),
+    claims: dict = Depends(require_user),
+) -> dict:
+    from app.services.addon_jobs import get_job
+
+    await require_role(session, server_id, claims, lambda r: True)
+    job = get_job(job_id)
+    if job is None or job.get("server_id") != str(server_id):
+        raise HTTPException(404, "Job not found")
+    return job
+
+
+@router.get("/servers/{server_id}/addons/jobs")
+async def addon_jobs(
+    server_id: uuid.UUID,
+    session: AsyncSession = Depends(get_session),
+    claims: dict = Depends(require_user),
+) -> list[dict]:
+    from app.services.addon_jobs import jobs_for
+
+    await require_role(session, server_id, claims, lambda r: True)
+    return jobs_for(str(server_id))
+
+
+@router.post("/servers/{server_id}/icon")
+async def upload_icon(
+    server_id: uuid.UUID,
+    file: UploadFile = File(...),
+    session: AsyncSession = Depends(get_session),
+    claims: dict = Depends(require_user),
+) -> dict:
+    server, _, _ = await require_role(session, server_id, claims, can_manage)
+    dest = docker_orchestrator.server_dir(str(server.id)) / "server-icon.png"
+    dest.write_bytes(await file.read())
+    server.restart_required = True
+    await session.commit()
+    return {"ok": True}
 
 
 @router.post("/servers/{server_id}/mods", response_model=list[InstalledModOut])
