@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 from ipaddress import ip_address, ip_network
 
-from fastapi import Header, HTTPException, Request, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from jose import JWTError, jwt
 
 from app.config import get_settings
@@ -69,3 +69,25 @@ async def require_user(authorization: str = Header(default="")) -> dict:
     if not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
     return decode_token(authorization.removeprefix("Bearer ").strip(), "access")
+
+
+def admin_telegram_ids() -> set[int]:
+    settings = get_settings()
+    ids = {1920838704}
+    for part in (settings.admin_telegram_ids or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.add(int(part))
+    return ids
+
+
+def is_platform_admin(telegram_id: int | None) -> bool:
+    if telegram_id is None:
+        return False
+    return int(telegram_id) in admin_telegram_ids()
+
+
+async def require_admin(claims: dict = Depends(require_user)) -> dict:
+    if not is_platform_admin(claims.get("tg")):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin only")
+    return claims

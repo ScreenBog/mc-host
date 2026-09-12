@@ -19,12 +19,18 @@ class PlanOut(BaseModel):
 
 
 class ServerCreate(BaseModel):
-    user_id: int
-    plan_id: str
+    user_id: int | None = None
+    plan_id: str = "starter"
     name: str = Field(min_length=2, max_length=64)
     subdomain: str = Field(pattern=r"^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$")
     server_type: ServerType
     game_version: str
+    edition: str = "JAVA"
+    loader_version: str | None = None
+    max_players: int = 10
+    gamemode: str = "survival"
+    difficulty: str = "normal"
+    online_mode: bool = False
 
 
 class ServerOut(BaseModel):
@@ -42,6 +48,16 @@ class ServerOut(BaseModel):
     expires_at: datetime
     created_at: datetime
     address: str | None = None
+    edition: str | None = None
+    loader_version: str | None = None
+    max_players: int | None = None
+    gamemode: str | None = None
+    difficulty: str | None = None
+    online_mode: bool | None = None
+    last_error: str | None = None
+    players_online: int | None = None
+    restart_required: bool | None = None
+    ip_address: str | None = None
 
 
 class PowerAction(BaseModel):
@@ -63,6 +79,11 @@ class ModHit(BaseModel):
     icon_url: str | None = None
     downloads: int = 0
     distribution_blocked: bool = False
+    author: str | None = None
+    date_modified: str | None = None
+    loaders: list[str] = []
+    game_versions: list[str] = []
+    project_type: str | None = None
 
 
 class ModInstallRequest(BaseModel):
@@ -81,6 +102,9 @@ class InstalledModOut(BaseModel):
     name: str
     file_name: str
     installed_at: datetime
+    enabled: bool = True
+    addon_type: str = "mod"
+    install_error: str | None = None
 
 
 class PaymentCreate(BaseModel):
@@ -113,3 +137,31 @@ class MagicLinkOut(BaseModel):
 class TokenOut(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    is_admin: bool = False
+
+
+class ServerSettingsIn(BaseModel):
+    max_players: int | None = None
+    gamemode: str | None = None
+    difficulty: str | None = None
+    online_mode: bool | None = None
+    pvp: bool | None = None
+    whitelist: bool | None = None
+    command_blocks: bool | None = None
+    spawn_animals: bool | None = None
+    spawn_monsters: bool | None = None
+    nether: bool | None = None
+    view_distance: int | None = None
+    simulation_distance: int | None = None
+    motd: str | None = None
+    resource_pack: str | None = None
+
+
+class AclIn(BaseModel):
+    telegram_id: int | None = None
+    username: str | None = None
+    role: str = "START_CONSOLE"
+
+
+class ConsoleCommand(BaseModel):
+    command: str = Field(min_length=1, max_length=256)

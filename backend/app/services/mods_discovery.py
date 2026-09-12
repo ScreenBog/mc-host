@@ -20,16 +20,22 @@ def _redis() -> redis.Redis:
     return redis.from_url(get_settings().redis_url, decode_responses=True)
 
 
-async def search_mods(query: str, loader: str, game_version: str) -> list[dict]:
+async def search_mods(
+    query: str,
+    loader: str,
+    game_version: str,
+    source: str = "both",
+    project_type: str = "mod",
+    index: str = "relevance",
+) -> list[dict]:
     import time
 
-    cache_key = f"mods:search:{loader}:{game_version}:{query.lower()}"
+    cache_key = f"mods:search:{source}:{project_type}:{loader}:{game_version}:{index}:{query.lower()}"
     if get_settings().beta_mode:
         hit = _mem.get(cache_key)
         if hit and hit[0] > time.time():
             return hit[1]
-        mr, cf = await _gather(query, loader, game_version)
-        merged = _dedupe(mr + cf)
+        merged = await _gather(query, loader, game_version, source, project_type, index)
         _mem[cache_key] = (time.time() + CACHE_TTL, merged)
         return merged
     client = _redis()
@@ -37,24 +43,34 @@ async def search_mods(query: str, loader: str, game_version: str) -> list[dict]:
         cached = await client.get(cache_key)
         if cached:
             return json.loads(cached)
-        mr, cf = await _gather(query, loader, game_version)
-        merged = _dedupe(mr + cf)
+        merged = await _gather(query, loader, game_version, source, project_type, index)
         await client.setex(cache_key, CACHE_TTL, json.dumps(merged))
         return merged
     finally:
         await client.aclose()
 
 
-async def _gather(query: str, loader: str, game_version: str) -> tuple[list[dict], list[dict]]:
-    try:
-        mr = await modrinth.search(query, loader, game_version)
-    except httpx.HTTPError:
-        mr = []
-    try:
-        cf = await curseforge.search(query, loader, game_version)
-    except httpx.HTTPError:
-        cf = []
-    return mr, cf
+async def _gather(
+    query: str,
+    loader: str,
+    game_version: str,
+    source: str,
+    project_type: str,
+    index: str,
+) -> list[dict]:
+    mr: list[dict] = []
+    cf: list[dict] = []
+    if source in {"both", "modrinth", "MODRINTH"}:
+        try:
+            mr = await modrinth.search(query, loader, game_version, project_type=project_type, index=index)
+        except httpx.HTTPError:
+            mr = []
+    if source in {"both", "curseforge", "CURSEFORGE"} and project_type in {"mod", "modpack"}:
+        try:
+            cf = await curseforge.search(query, loader, game_version)
+        except httpx.HTTPError:
+            cf = []
+    return _dedupe(mr + cf)
 
 
 def _dedupe(hits: list[dict]) -> list[dict]:

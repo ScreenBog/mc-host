@@ -1,4 +1,7 @@
 .env
+.env.remote
+.env.*
+!.env.example
 data/
 nginx/certs/*.pem
 nginx/certs/*.key

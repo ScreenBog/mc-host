@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 
 from app.config import get_settings
 from app.db import init_db
-from app.routers import auth, dev, mods, payments, servers, users
+from app.routers import admin, auth, dev, mods, payments, servers, software, users
 from app.services import mc_router
 
 settings = get_settings()
@@ -50,6 +50,8 @@ app.include_router(servers.router)
 app.include_router(mods.router)
 app.include_router(payments.router)
 app.include_router(dev.router)
+app.include_router(software.router)
+app.include_router(admin.router)
 
 
 @app.get("/healthz")

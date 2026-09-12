@@ -66,6 +66,11 @@ async def search(query: str, loader: str, game_version: str, page_size: int = 20
                 "icon_url": (mod.get("logo") or {}).get("thumbnailUrl"),
                 "downloads": int(mod.get("downloadCount") or 0),
                 "distribution_blocked": blocked,
+                "author": (mod.get("authors") or [{}])[0].get("name") if mod.get("authors") else "",
+                "date_modified": str(mod.get("dateModified") or ""),
+                "loaders": [],
+                "game_versions": [],
+                "project_type": "mod",
             }
         )
     return results

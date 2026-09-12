@@ -8,7 +8,7 @@ from app.config import get_settings
 from app.db import get_session
 from app.models import User
 from app.schemas import MagicLinkOut, MagicLinkRequest, TokenOut
-from app.security import create_token, decode_token, require_bot_token
+from app.security import create_token, decode_token, is_platform_admin, require_bot_token
 
 router = APIRouter(prefix="/api/v1/auth", tags=["auth"])
 
@@ -49,4 +49,4 @@ async def consume_magic_link(token: str = Query(...)) -> TokenOut:
         token_type="access",
         extra={"tg": payload.get("tg")},
     )
-    return TokenOut(access_token=access)
+    return TokenOut(access_token=access, is_admin=is_platform_admin(payload.get("tg")))

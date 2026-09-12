@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     app_env: str = "production"
     beta_mode: bool = False
     public_ip: str = "178.47.143.15"
+    lan_ip: str = "192.168.0.7"
     public_web_origin: str = "https://shnenepepe.online"
     public_api_origin: str = "https://api.shnenepepe.online"
     game_domain: str = "shnenepepe.ru"
@@ -21,6 +22,9 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     jwt_secret: str = "dev-secret-change-me"
     internal_bot_token: str = "dev-internal-token"
+    admin_telegram_ids: str = "1920838704"
+    maintenance: bool = False
+    disable_create: bool = False
 
     cors_origins: str = "https://shnenepepe.online"
 

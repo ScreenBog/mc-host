@@ -13,15 +13,20 @@ def _headers() -> dict[str, str]:
     return {"User-Agent": get_settings().modrinth_user_agent}
 
 
-async def search(query: str, loader: str, game_version: str, limit: int = 20) -> list[dict]:
-    facets = json.dumps(
-        [
-            ["project_type:mod"],
-            [f"versions:{game_version}"],
-            [f"categories:{loader}"],
-        ]
-    )
-    params = {"query": query, "facets": facets, "limit": limit}
+async def search(
+    query: str,
+    loader: str,
+    game_version: str,
+    limit: int = 20,
+    project_type: str = "mod",
+    index: str = "relevance",
+) -> list[dict]:
+    facets = [["project_type:" + project_type]]
+    if game_version:
+        facets.append([f"versions:{game_version}"])
+    if loader and loader not in {"vanilla", "all"}:
+        facets.append([f"categories:{loader}"])
+    params = {"query": query, "facets": json.dumps(facets), "limit": limit, "index": index}
     async with httpx.AsyncClient(timeout=20, headers=_headers()) as client:
         response = await client.get(f"{BASE}/search", params=params)
         response.raise_for_status()
@@ -36,6 +41,11 @@ async def search(query: str, loader: str, game_version: str, limit: int = 20) ->
             "icon_url": hit.get("icon_url"),
             "downloads": hit.get("downloads", 0),
             "distribution_blocked": False,
+            "author": (hit.get("author") or ""),
+            "date_modified": hit.get("date_modified"),
+            "loaders": hit.get("categories") or [],
+            "game_versions": hit.get("versions") or [],
+            "project_type": hit.get("project_type", project_type),
         }
         for hit in hits
     ]

@@ -12,11 +12,18 @@ from app.models import Server, ServerType
 
 ITZ_TYPE = {
     ServerType.VANILLA: "VANILLA",
+    ServerType.SNAPSHOT: "VANILLA",
     ServerType.PAPER: "PAPER",
     ServerType.PURPUR: "PURPUR",
+    ServerType.SPIGOT: "SPIGOT",
     ServerType.FABRIC: "FABRIC",
     ServerType.FORGE: "FORGE",
     ServerType.NEOFORGE: "NEOFORGE",
+    ServerType.QUILT: "QUILT",
+    ServerType.ARCLIGHT: "FORGE",
+    ServerType.MODPACK: "FORGE",
+    ServerType.BEDROCK: "VANILLA",
+    ServerType.POCKETMINE: "PAPER",
 }
 
 
@@ -169,6 +176,26 @@ async def power_async(container_id: str, action: str) -> None:
 
 async def remove_container_async(container_id: str) -> None:
     await asyncio.to_thread(remove_container, container_id)
+
+
+def tail_log(server_id: str, lines: int = 80) -> str:
+    from app.services.java_orchestrator import tail_log as java_tail
+
+    return java_tail(server_id, lines)
+
+
+def send_command(container_id: str, command: str) -> None:
+    if container_id.startswith("java:"):
+        from app.services.java_orchestrator import send_command as java_cmd
+
+        java_cmd(container_id, command)
+        return
+    # Docker: attach via docker exec is out of scope; write to rcon later.
+    raise RuntimeError("Console commands on Docker backends require RCON")
+
+
+def plugins_volume(server: Server) -> Path:
+    return server_dir(str(server.id)) / "plugins"
 
 
 def mods_volume(server: Server) -> Path:

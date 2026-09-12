@@ -1,64 +1,30 @@
 # SHNPP — хостинг Minecraft
 
-Кастомный оркестратор: **Docker Engine API + itzg/mc-router**, без Pterodactyl/Pelican.
+Свой Aternos: кнопка «Старт» → игра. Один порт **25565**, сервер **спит без игроков**.
 
-- Один порт **25565** на все инстансы (hostname из Handshake).
-- Scale-to-Zero: контейнер гасится без игроков и будится при входе (MOTD ожидания).
-- Зоны: `shnpp.online` — веб (Cloudflare Proxy), `*.shnpp.ru` — игра (DNS only).
-- Биллинг: Telegram-бот → ЮKassa → webhook → контейнер + CNAME.
-- Моды: Modrinth API v2 + CurseForge Core, кэш Redis 15 минут.
+## Как зайти в панель
 
-## Состав репозитория
+1. Telegram-бот [@mchost_robot](https://t.me/mchost_robot) → **Панель модов** (Magic Link).
+2. Сайт: `PUBLIC_WEB_ORIGIN` из `.env` (бета: http://192.168.0.7:8000).
+3. Мастер из 4 шагов: издание → ядро → версия → имя/поддомен.
+4. Вкладка **Дополнения**: поиск Lithium / ViaVersion → Установить (зависимости подтягиваются).
+5. **Старт** → копировать адрес `поддомен.game_domain` или `IP:25565`.
 
-```
-backend/   FastAPI + Docker SDK + Taskiq
-bot/        aiogram 3
-web/        Nuxt 3 панель модов
-sql/        PostgreSQL DDL + тарифы
-nginx/      Origin CA, reverse proxy
-scripts/    iptables изоляция LAN
-```
+## Админ (только Telegram ID 1920838704)
 
-## Быстрый старт (Linux-хост с белым IP)
-
-1. Скопируйте `.env.example` → `.env` и заполните секреты.
-2. Origin CA: `nginx/certs/origin.crt` и `origin.key`, в Cloudflare SSL = **Full (strict)**.
-3. DNS:
-   - `shnpp.online`, `api.shnpp.online` — A, proxy **on**
-   - `node1.shnpp.ru` — A на белый IP, proxy **off**
-4. Каталог данных: `sudo mkdir -p /var/mc_hosting/servers && sudo chown 1000:1000 /var/mc_hosting/servers`
-5. Файрвол: `sudo bash scripts/firewall.sh`
-6. `cp scripts/sysctl-mc.conf /etc/sysctl.d/99-mc-hosting.conf && sudo sysctl --system`
-7. `docker compose up -d --build`
-
-Webhook ЮKassa: `https://api.shnpp.online/api/v1/payments/webhook`.  
-Проверка IP: диапазоны из [документации ЮKassa](https://yookassa.ru/developers/using-api/webhooks). Для локального теста `YOOKASSA_IP_CHECK=false`.
-
-## Поток оплаты
-
-1. Бот собирает тариф / ядро / версию / поддомен.
-2. `Payment.create` с Idempotence-Key UUIDv4.
-3. `payment.succeeded` → сверка IP → `Payment.find_one` → Taskiq `provision_invoice`.
-4. Docker: `itzg/minecraft-server`, labels `mc-router.host=<sub>.shnpp.ru`.
-5. Cloudflare: CNAME `<sub>.shnpp.ru` → `node1.shnpp.ru`, **proxied=false**.
-6. За 24 часа до `expires_at` — кнопка «Продлить». В ноль — `SUSPENDED`. Через 7 дней — том и DNS удаляются.
+- Бот: `/admin` или скрытая кнопка в меню.
+- Сайт: `/admin` — в обычной навигации не показывается, пускает JWT с этим telegram_id.
+- Env: `ADMIN_TELEGRAM_IDS=1920838704`
 
 ## Моды
 
-`GET /api/v1/mods/search?query=&loader=&game_version=`  
-User-Agent Modrinth обязателен. CurseForge `allowModDistribution=false` → HTTP 403 и ручная загрузка в `downloads/`.
+`GET /api/v1/mods/search?query=&loader=&game_version=&source=both&project_type=mod`  
+CurseForge `allowModDistribution=false` → не 500, а «нужна ручная загрузка».
 
-На уже запущенном сервере jar пишется в `/var/mc_hosting/servers/<id>/mods`.
+## Бета Windows / Linux без Docker
 
-## Тесты бэкенда
+`scripts/start_beta.ps1` (Windows) или `scripts/remote_start.sh` (Linux).  
+Оркестратор: `java_orchestrator` + локальный mc-router.  
+Linux+Docker: `docker compose up -d`.
 
-```
-cd backend
-python -m pip install -r requirements.txt
-python -m pytest
-```
-
-## Что нужно с вашей стороны
-
-- Токен Telegram-бота, магазин ЮKassa, Cloudflare API token (DNS Write на зону `shnpp.ru`), ключ CurseForge.
-- Linux-хост 32–64 ГБ RAM, Docker Engine, белый IP (или VPS-туннель GRE/WireGuard, как в спецификации).
+`.env`, база и jar в git не кладутся.

@@ -32,11 +32,14 @@ def lookup(hostname: str) -> Backend | None:
     if key in _backends:
         return _backends[key]
     short = key.split(".")[0]
-    for name, backend in _backends.items():
-        if name.split(".")[0] == short:
-            return backend
-    if _backends:
-        return next(iter(_backends.values()))
+    matches = [backend for name, backend in _backends.items() if name.split(".")[0] == short]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        unique = {id(m): m for m in matches}
+        if len(unique) == 1:
+            return next(iter(unique.values()))
+        return None
     return None
 
 

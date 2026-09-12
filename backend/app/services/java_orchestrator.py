@@ -101,7 +101,7 @@ def create_mc_server(
     proc = subprocess.Popen(
         cmd,
         cwd=str(srv),
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE,
         stdout=open(srv / "process.log", "ab"),
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
@@ -110,19 +110,13 @@ def create_mc_server(
     _ports[server_id] = port
     hostname = f"{subdomain}.{settings.game_domain}"
 
-    async def wake() -> None:
+    def wake_sync() -> None:
         start_container(f"java:{port}:{server_id}")
 
-    try:
-        loop = asyncio.get_running_loop()
-        loop.call_soon(lambda: mc_router.register(hostname, port, wake=wake))
-    except RuntimeError:
-        mc_router.register(hostname, port)
-    mc_router.register(hostname, port)
-    mc_router.register(subdomain, port)
-    mc_router.register(settings.public_ip, port)
-    mc_router.register("127.0.0.1", port)
-    mc_router.register("192.168.0.148", port)
+    async def wake() -> None:
+        await asyncio.to_thread(wake_sync)
+
+    _register_hosts(hostname, subdomain, port, wake)
     time.sleep(2)
     if proc.poll() is not None:
         raise RuntimeError(f"Java process exited with {proc.returncode}. See {srv / 'process.log'}")
@@ -152,6 +146,7 @@ def start_container(container_id: str) -> None:
     proc = subprocess.Popen(
         cmd,
         cwd=str(srv),
+        stdin=subprocess.PIPE,
         stdout=open(srv / "process.log", "ab"),
         stderr=subprocess.STDOUT,
         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == "nt" else 0,
@@ -199,9 +194,41 @@ def power(container_id: str, action: str) -> None:
             raise ValueError(action)
 
 
+def _register_hosts(hostname: str, subdomain: str, port: int, wake=None) -> None:
+    settings = get_settings()
+    names = {hostname, subdomain, "127.0.0.1"}
+    if settings.public_ip:
+        names.add(settings.public_ip)
+    if settings.lan_ip:
+        names.add(settings.lan_ip)
+    for name in names:
+        mc_router.register(name, port, wake=wake)
+
+
 def ensure_running(container_id: str, subdomain: str) -> None:
     start_container(container_id)
-    port, _server_id = _parse(container_id)
+    port, server_id = _parse(container_id)
     settings = get_settings()
-    mc_router.register(f"{subdomain}.{settings.game_domain}", port)
-    mc_router.register(subdomain, port)
+
+    async def wake() -> None:
+        start_container(container_id)
+
+    _register_hosts(f"{subdomain}.{settings.game_domain}", subdomain, port, wake)
+
+
+def send_command(container_id: str, command: str) -> None:
+    _, server_id = _parse(container_id)
+    proc = _procs.get(server_id)
+    if not proc or proc.poll() is not None or not proc.stdin:
+        raise RuntimeError("Server is not accepting commands")
+    line = command.strip() + "\n"
+    proc.stdin.write(line.encode("utf-8"))
+    proc.stdin.flush()
+
+
+def tail_log(server_id: str, lines: int = 80) -> str:
+    log_path = server_dir(server_id) / "process.log"
+    if not log_path.exists():
+        return ""
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    return "\n".join(text.splitlines()[-lines:])
